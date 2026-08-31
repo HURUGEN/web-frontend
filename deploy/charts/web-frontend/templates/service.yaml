@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  # Names the internal frontend Service after the Helm release.
+  name: {{ include "web-frontend.fullname" . }}
+  labels:
+    {{- include "web-frontend.labels" . | nindent 4 }}
+spec:
+  # Keeps the frontend private to the cluster; Traefik owns the only public NodePorts.
+  type: {{ .Values.service.type }}
+  selector:
+    # Reuses the exact Deployment Pod labels so EndpointSlices resolve correctly.
+    {{- include "web-frontend.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      # Exposes the in-cluster HTTP port consumed by the Ingress backend.
+      port: {{ .Values.service.port }}
+      # Targets the named Nginx container port rather than a duplicated numeric literal.
+      targetPort: http
+      protocol: TCP

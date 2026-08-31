@@ -1,0 +1,46 @@
+# Keeps two replicas as the minimum availability target for the training release.
+replicaCount: 2
+
+image:
+  # Identifies the owner-controlled registry repository; CI supplies the immutable digest before deployment.
+  repository: ghcr.io/hurugen/web-frontend
+  # Remains empty in source so helm template refuses deployments that do not provide a BuildKit digest.
+  digest: ""
+  # Avoids unnecessary pulls when an immutable digest is already present on the target node.
+  pullPolicy: IfNotPresent
+
+# References only the pre-created pull Secret name; no Secret value is stored in this repository.
+imagePullSecrets:
+  - name: ghcr-pull-config
+
+service:
+  # Keeps Nginx reachable only from inside the cluster through Traefik.
+  type: ClusterIP
+  # Exposes the HTTP port that maps to the Nginx container port.
+  port: 80
+
+ingress:
+  # Allows the chart to be rendered without an external route for isolated validation when needed.
+  enabled: true
+  # Selects the sole reviewed ingress controller from iteration 3.
+  className: traefik
+  # Defines the public training hostname; use a per-environment values override for another domain.
+  host: web.cloud.k8s.lab
+  # References the namespace-local certificate Secret created outside this repository.
+  tlsSecret: web-frontend-tls
+
+runtimeConfig:
+  # Supplies only a browser-visible API base URL; never add Token, password, or private service configuration.
+  apiBaseUrl: https://app.cloud.k8s.lab
+
+resources:
+  requests:
+    # Reserves a small steady-state CPU amount for static content delivery.
+    cpu: 50m
+    # Reserves enough memory for the Nginx worker and static-file cache.
+    memory: 64Mi
+  limits:
+    # Bounds CPU consumption without requiring a privileged runtime.
+    cpu: 250m
+    # Bounds memory consumption for an unhealthy worker process.
+    memory: 128Mi

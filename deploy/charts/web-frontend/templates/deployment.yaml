@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Uses the release-qualified application name for the frontend workload.
+  name: {{ include "web-frontend.fullname" . }}
+  labels:
+    {{- include "web-frontend.labels" . | nindent 4 }}
+spec:
+  # Maintains the reviewed two-replica availability target unless an environment override is approved.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "web-frontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "web-frontend.selectorLabels" . | nindent 8 }}
+    spec:
+      # References only the existing private-registry pull Secret by name.
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      securityContext:
+        # Selects the default Linux seccomp profile for all containers in the Pod.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # Uses a digest-only image reference returned by the Helm helper.
+          image: {{ include "web-frontend.image" . | quote }}
+          # Retains pull behavior appropriate for immutable image digests.
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              # Exposes Nginx's internal HTTP listener for the ClusterIP Service.
+              containerPort: 80
+              protocol: TCP
+          securityContext:
+            # Prohibits privilege escalation in the Nginx container.
+            allowPrivilegeEscalation: false
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              # Verifies the static SPA entrypoint before accepting traffic.
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              # Verifies that Nginx remains able to serve the static SPA entrypoint.
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: runtime-config
+              # Replaces the image default with the release-specific browser runtime configuration.
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+              readOnly: true
+      volumes:
+        - name: runtime-config
+          configMap:
+            # Selects the ConfigMap that carries no Secret material.
+            name: {{ include "web-frontend.fullname" . }}-runtime

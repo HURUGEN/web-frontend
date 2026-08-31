@@ -1,0 +1,30 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  # Names the HTTPS route after the Helm release.
+  name: {{ include "web-frontend.fullname" . }}
+  labels:
+    {{- include "web-frontend.labels" . | nindent 4 }}
+spec:
+  # Routes this application only through the reviewed Traefik controller.
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  tls:
+    - hosts:
+        # Uses the environment-specific public hostname.
+        - {{ .Values.ingress.host | quote }}
+      # References a pre-created Secret in the same namespace without embedding certificate data.
+      secretName: {{ .Values.ingress.tlsSecret | quote }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Sends external HTTPS traffic to the internal ClusterIP Service.
+                name: {{ include "web-frontend.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

@@ -1,0 +1,11 @@
+# Declares the Helm chart API version supported by Helm 3.
+apiVersion: v2
+# Names the release artifact independently from the Kubernetes Release name.
+name: web-frontend
+# Identifies this chart as an application chart rather than a reusable library.
+type: application
+# Pins the chart's independently versioned deployment contract.
+version: 0.1.0
+# Records the matching application source version for release inspection.
+appVersion: "0.1.0"
+description: Runtime-configured static frontend served by Nginx through Traefik.

@@ -1,0 +1,64 @@
+/* Defines the page box model used by the minimal runtime-configuration health view. */
+* {
+  box-sizing: border-box;
+}
+
+/* Provides a neutral document baseline without relying on browser-specific margins. */
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #f4f7f8;
+  color: #1e2933;
+  font-family: Arial, sans-serif;
+}
+
+/* Centers the compact application status on both local and containerized renders. */
+#app {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+/* Frames one application status surface without introducing nested layout cards. */
+.application-status {
+  width: min(100%, 560px);
+  border: 1px solid #cbd5dc;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 28px;
+}
+
+/* Marks the deployment context with a compact, readable label. */
+.eyebrow {
+  margin: 0 0 8px;
+  color: #0f766e;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Keeps the page heading within the compact status surface. */
+h1 {
+  margin: 0 0 24px;
+  font-size: 28px;
+}
+
+/* Removes default definition-list spacing from the status data. */
+dl,
+dd {
+  margin: 0;
+}
+
+/* Separates the public runtime address from its label for easy visual inspection. */
+dt {
+  color: #52616b;
+  font-size: 14px;
+}
+
+/* Allows long API base URLs to wrap without escaping the status surface. */
+dd {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}

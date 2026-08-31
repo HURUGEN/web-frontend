@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 3,
+  "extends": "node-npm-kubernetes",
+  "project": {
+    "id": "web-frontend"
+  },
+  "variables": {
+    "NPM_WORK_DIR": ".",
+    "NPM_INSTALL_COMMAND": "ci",
+    "NPM_TEST_COMMAND": "test",
+    "NPM_BUILD_COMMAND": "build",
+    "BUILD_ARTIFACTS": "dist/**",
+    "ENABLE_COVERAGE": false,
+    "ENABLE_SONAR": false,
+    "NODE_IMAGE": "docker.io/library/node:24.15.0-bookworm-slim@sha256:4e6b70dd6cbfc88c8157ba19aa3d9f9cce6ba4703576d55459e45efcbc9c5f5d",
+    "NODE_USER_HOME": "/home/jenkins",
+    "NODE_CPU_REQUEST": "250m",
+    "NODE_MEMORY_REQUEST": "512Mi",
+    "NODE_CPU_LIMIT": "2",
+    "NODE_MEMORY_LIMIT": "2Gi",
+    "JNLP_IMAGE": "docker.io/jenkins/inbound-agent:jdk25@sha256:a95513bf791abd2279535ed78bcf5695cd3d910fab0edeeda3d049cccbe2a4ac",
+    "JNLP_WORKING_DIR": "/home/jenkins/agent",
+    "IMAGE_REPOSITORY": "ghcr.io/hurugen/web-frontend",
+    "BUILDKIT_CACHE_REF": "${IMAGE_REPOSITORY}:buildcache",
+    "BUILDKIT_IMAGE": "docker.io/moby/buildkit:v0.32.2-rootless@sha256:504731e577c20559c00f968f33219f30115e70be29ab96728d1d06e963fc494b",
+    "BUILDKIT_EXECUTOR": "buildctl-daemonless.sh",
+    "BUILDKIT_FRONTEND": "dockerfile.v0",
+    "BUILDKITD_FLAGS": "--oci-worker-no-process-sandbox",
+    "BUILDKIT_STATE_DIR": "/home/user/.local/share/buildkit",
+    "BUILDKIT_DOCKER_CONFIG": "/home/user/.docker",
+    "BUILDKIT_REGISTRY_SECRET_NAME": "ghcr-push-config",
+    "BUILDKIT_RUN_AS_USER": 1000,
+    "BUILDKIT_RUN_AS_GROUP": 1000,
+    "IMAGE_BUILDER_CPU_REQUEST": "250m",
+    "IMAGE_BUILDER_MEMORY_REQUEST": "512Mi",
+    "IMAGE_BUILDER_CPU_LIMIT": "2",
+    "IMAGE_BUILDER_MEMORY_LIMIT": "2Gi",
+    "HELM_IMAGE": "docker.io/alpine/k8s:1.36.2@sha256:44ef4942e171939b9c665a4a84beb80e2dcdb9a24330d4651cfdfd2e9deecc47",
+    "HELM_EXECUTABLE": "helm",
+    "HELM_DRIVER": "configmap",
+    "HELM_USER_HOME": "/home/jenkins",
+    "HELM_RELEASE": "web-frontend",
+    "HELM_CHART": "deploy/charts/web-frontend",
+    "CI_NAMESPACE": "ci",
+    "KUBE_NAMESPACE": "web-frontend",
+    "HELM_CPU_REQUEST": "100m",
+    "HELM_MEMORY_REQUEST": "128Mi",
+    "HELM_CPU_LIMIT": "1",
+    "HELM_MEMORY_LIMIT": "512Mi",
+    "DEPLOY_SERVICE_ACCOUNT": "jenkins-deployer",
+    "POD_RUN_AS_USER": 1000,
+    "POD_RUN_AS_GROUP": 1000,
+    "POD_FS_GROUP": 1000,
+    "HELM_OVERRIDE_VOLUME_NAME": "helm-overrides",
+    "HELM_OVERRIDE_CONFIG_MAP": "deploy-overrides",
+    "HELM_OVERRIDE_MOUNT_PATH": "/etc/helm/deploy-overrides",
+    "HELM_OVERRIDE_SOURCE_FILE": "${HELM_OVERRIDE_MOUNT_PATH}/values.yaml",
+    "HELM_OVERRIDE_VALUES_FILE": ".jenkins-json-build/deploy-overrides-values.yaml",
+    "HELM_OVERRIDE_PREPARE_SCRIPT": "ci/prepare-helm-values.sh",
+    "BUILD_PROXY_CONFIG_MAP": "build-proxy"
+  },
+  "agent": {
+    "type": "kubernetes",
+    "yamlFile": "ci/jenkins-agent.yaml"
+  },
+  "stages": [
+    {
+      "id": "image",
+      "name": "OCI image",
+      "container": "buildkit",
+      "timeoutMinutes": 60,
+      "condition": {
+        "variable": "BRANCH_NAME",
+        "operator": "equals",
+        "value": "main"
+      },
+      "steps": [
+        {
+          "type": "containerImage",
+          "builder": "buildkit",
+          "executor": "${BUILDKIT_EXECUTOR}",
+          "frontend": "${BUILDKIT_FRONTEND}",
+          "context": ".",
+          "dockerfile": "Dockerfile",
+          "destinations": ["${IMAGE_REPOSITORY}:${BUILD_NUMBER}"],
+          "cache": true,
+          "cacheFrom": ["type=registry,ref=${BUILDKIT_CACHE_REF}"],
+          "cacheTo": ["type=registry,ref=${BUILDKIT_CACHE_REF},mode=max"]
+        }
+      ]
+    },
+    {
+      "id": "deploy",
+      "name": "Helm deploy",
+      "container": "helm",
+      "timeoutMinutes": 20,
+      "condition": {
+        "variable": "BRANCH_NAME",
+        "operator": "equals",
+        "value": "main"
+      },
+      "steps": [
+        {
+          "type": "command",
+          "script": "${HELM_OVERRIDE_PREPARE_SCRIPT} \"${HELM_OVERRIDE_SOURCE_FILE}\" \"${HELM_OVERRIDE_VALUES_FILE}\""
+        },
+        {
+          "type": "helm",
+          "action": "lint",
+          "executable": "${HELM_EXECUTABLE}",
+          "chart": "${HELM_CHART}",
+          "valuesFiles": ["${HELM_OVERRIDE_VALUES_FILE}"],
+          "setValues": {
+            "image.repository": "${IMAGE_REPOSITORY}",
+            "image.digest": "${IMAGE_DIGEST}"
+          }
+        },
+        {
+          "type": "helm",
+          "action": "template",
+          "executable": "${HELM_EXECUTABLE}",
+          "release": "${HELM_RELEASE}",
+          "chart": "${HELM_CHART}",
+          "namespace": "${KUBE_NAMESPACE}",
+          "valuesFiles": ["${HELM_OVERRIDE_VALUES_FILE}"],
+          "setValues": {
+            "image.repository": "${IMAGE_REPOSITORY}",
+            "image.digest": "${IMAGE_DIGEST}"
+          }
+        },
+        {
+          "type": "helm",
+          "action": "upgrade",
+          "executable": "${HELM_EXECUTABLE}",
+          "release": "${HELM_RELEASE}",
+          "chart": "${HELM_CHART}",
+          "namespace": "${KUBE_NAMESPACE}",
+          "createNamespace": false,
+          "wait": true,
+          "timeout": "10m",
+          "rollbackOnFailure": true,
+          "valuesFiles": ["${HELM_OVERRIDE_VALUES_FILE}"],
+          "setValues": {
+            "image.repository": "${IMAGE_REPOSITORY}",
+            "image.digest": "${IMAGE_DIGEST}"
+          }
+        },
+        {
+          "type": "helm",
+          "action": "status",
+          "executable": "${HELM_EXECUTABLE}",
+          "release": "${HELM_RELEASE}",
+          "namespace": "${KUBE_NAMESPACE}"
+        }
+      ]
+    }
+  ]
+}

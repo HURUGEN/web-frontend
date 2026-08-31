@@ -1,0 +1,16 @@
+{
+  "name": "web-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.4",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "test": "node --test",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.3"
+  }
+}

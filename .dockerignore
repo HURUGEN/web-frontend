@@ -1,0 +1,17 @@
+# Excludes local dependency trees because Docker rebuilds them with npm ci from the lockfile.
+node_modules
+
+# Excludes local Vite output because the Docker builder creates a clean dist directory.
+dist
+
+# Excludes version-control metadata from the build context.
+.git
+
+# Excludes environment files because browser runtime configuration is supplied through config.js.
+.env
+.env.*
+!.env.example
+
+# Excludes test evidence and operating-system metadata from the image context.
+evidence
+.DS_Store

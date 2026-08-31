@@ -1,0 +1,250 @@
+# Defines the Kubernetes Agent Pod that Jenkins creates for one frontend build only.
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    # Makes temporary build Agents observable without selecting long-lived Jenkins Pods.
+    workload: jenkins-build
+spec:
+  # Limits Kubernetes API permissions to the Helm container's projected short-lived token.
+  serviceAccountName: ${DEPLOY_SERVICE_ACCOUNT}
+  # Prevents Kubernetes from automatically mounting a ServiceAccount token into every container.
+  automountServiceAccountToken: false
+  # Ensures a failed or completed build Agent is not restarted by Kubernetes.
+  restartPolicy: Never
+  securityContext:
+    # Makes the complete Pod run as the reviewed unprivileged UID and GID.
+    runAsNonRoot: true
+    runAsUser: ${POD_RUN_AS_USER}
+    runAsGroup: ${POD_RUN_AS_GROUP}
+    fsGroup: ${POD_FS_GROUP}
+    # Avoids recursive ownership changes when an emptyDir is already usable by the Pod group.
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      # Applies Kubernetes' default syscall policy to every container unless a narrow exception is below.
+      type: RuntimeDefault
+  containers:
+    # Jenkins Kubernetes Plugin injects the dynamic connection details and shared workspace into this container.
+    - name: jnlp
+      image: ${JNLP_IMAGE}
+      imagePullPolicy: IfNotPresent
+      workingDir: ${JNLP_WORKING_DIR}
+      envFrom:
+        # Supplies an optional centrally managed build proxy without embedding proxy values in Git.
+        - configMapRef:
+            name: ${BUILD_PROXY_CONFIG_MAP}
+      securityContext:
+        # Keeps the Jenkins inbound Agent unprivileged.
+        runAsNonRoot: true
+        runAsUser: ${POD_RUN_AS_USER}
+        runAsGroup: ${POD_RUN_AS_GROUP}
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+
+    # Runs only npm install, test, and Vite build stages; it never receives a Kubernetes API token volume.
+    - name: node
+      image: ${NODE_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command:
+        - cat
+      tty: true
+      env:
+        # Directs npm's writable home directory to the per-Agent emptyDir volume.
+        - name: HOME
+          value: ${NODE_USER_HOME}
+        # Keeps the npm cache within the same temporary volume so it cannot leak between builds.
+        - name: npm_config_cache
+          value: ${NODE_USER_HOME}/.npm
+      envFrom:
+        # Keeps proxy configuration consistent with the other build-only containers.
+        - configMapRef:
+            name: ${BUILD_PROXY_CONFIG_MAP}
+      resources:
+        requests:
+          # Reserves the reviewed minimum CPU for deterministic npm and Vite execution.
+          cpu: "${NODE_CPU_REQUEST}"
+          # Reserves the reviewed minimum memory for the Node build process.
+          memory: "${NODE_MEMORY_REQUEST}"
+        limits:
+          # Caps Node CPU use inside the temporary Agent.
+          cpu: "${NODE_CPU_LIMIT}"
+          # Caps Node memory use inside the temporary Agent.
+          memory: "${NODE_MEMORY_LIMIT}"
+      securityContext:
+        # Preserves a fully unprivileged Node execution environment.
+        runAsNonRoot: true
+        runAsUser: ${POD_RUN_AS_USER}
+        runAsGroup: ${POD_RUN_AS_GROUP}
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      volumeMounts:
+        # Mounts only the temporary Node HOME volume and intentionally omits deploy-api.
+        - name: node-home
+          mountPath: ${NODE_USER_HOME}
+
+    # Builds and pushes the OCI image with Rootless BuildKit, using only its registry credential mount.
+    - name: buildkit
+      image: ${BUILDKIT_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - cat
+      tty: true
+      env:
+        # Configures the Rootless BuildKit daemon state path and narrow process-sandbox exception.
+        - name: BUILDKITD_FLAGS
+          value: >-
+            ${BUILDKITD_FLAGS} --root ${BUILDKIT_STATE_DIR}
+        # Selects the read-only registry configuration mounted from the pre-created Secret.
+        - name: DOCKER_CONFIG
+          value: ${BUILDKIT_DOCKER_CONFIG}
+        # Reads optional HTTP proxy configuration from the cluster ConfigMap.
+        - name: HTTP_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: ${BUILD_PROXY_CONFIG_MAP}
+              key: HTTP_PROXY
+        # Reads optional HTTPS proxy configuration from the cluster ConfigMap.
+        - name: HTTPS_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: ${BUILD_PROXY_CONFIG_MAP}
+              key: HTTPS_PROXY
+        # Excludes internal registry and cluster destinations from the optional proxy.
+        - name: NO_PROXY
+          valueFrom:
+            configMapKeyRef:
+              name: ${BUILD_PROXY_CONFIG_MAP}
+              key: NO_PROXY
+      securityContext:
+        # Uses the dedicated Rootless BuildKit UID rather than a root user.
+        runAsNonRoot: true
+        runAsUser: ${BUILDKIT_RUN_AS_USER}
+        runAsGroup: ${BUILDKIT_RUN_AS_GROUP}
+        # Is the minimal BuildKit exception required for Rootless user-namespace setup; it is not privileged mode.
+        allowPrivilegeEscalation: true
+        # Is the narrow BuildKit compatibility exception inherited unchanged from the verified Java baseline.
+        seccompProfile:
+          type: Unconfined
+        # Is the corresponding AppArmor compatibility exception inherited unchanged from the Java baseline.
+        appArmorProfile:
+          type: Unconfined
+        capabilities:
+          # Grants only the two capabilities Rootless BuildKit needs to establish its user namespace.
+          add:
+            - SETUID
+            - SETGID
+          drop:
+            - ALL
+      resources:
+        requests:
+          # Reserves CPU for the BuildKit image build and registry push.
+          cpu: "${IMAGE_BUILDER_CPU_REQUEST}"
+          # Reserves memory for BuildKit layers and manifest generation.
+          memory: "${IMAGE_BUILDER_MEMORY_REQUEST}"
+        limits:
+          # Caps temporary image-build CPU use.
+          cpu: "${IMAGE_BUILDER_CPU_LIMIT}"
+          # Caps temporary image-build memory use.
+          memory: "${IMAGE_BUILDER_MEMORY_LIMIT}"
+      volumeMounts:
+        # Mounts the GHCR push credential as a read-only Docker configuration.
+        - name: buildkit-config
+          mountPath: ${BUILDKIT_DOCKER_CONFIG}
+          readOnly: true
+        # Mounts ephemeral BuildKit state that is deleted with the Agent.
+        - name: buildkit-state
+          mountPath: ${BUILDKIT_STATE_DIR}
+
+    # Runs Helm validation and deployment after BuildKit has returned the immutable image digest.
+    - name: helm
+      image: ${HELM_IMAGE}
+      imagePullPolicy: IfNotPresent
+      command:
+        - cat
+      tty: true
+      env:
+        # Directs Helm's writable state to a per-Agent emptyDir volume.
+        - name: HOME
+          value: ${HELM_USER_HOME}
+        # Uses ConfigMap-backed release history, matching the verified Java baseline.
+        - name: HELM_DRIVER
+          value: ${HELM_DRIVER}
+      resources:
+        requests:
+          # Reserves the reviewed minimum CPU for Helm render and API operations.
+          cpu: "${HELM_CPU_REQUEST}"
+          # Reserves the reviewed minimum memory for Helm execution.
+          memory: "${HELM_MEMORY_REQUEST}"
+        limits:
+          # Caps Helm CPU use.
+          cpu: "${HELM_CPU_LIMIT}"
+          # Caps Helm memory use.
+          memory: "${HELM_MEMORY_LIMIT}"
+      securityContext:
+        # Keeps the deploy client non-root even though it has a time-bounded API token mount.
+        runAsNonRoot: true
+        runAsUser: ${POD_RUN_AS_USER}
+        runAsGroup: ${POD_RUN_AS_GROUP}
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+      volumeMounts:
+        # Mounts temporary Helm state for this Agent only.
+        - name: helm-home
+          mountPath: ${HELM_USER_HOME}
+        # Mounts an optional ConfigMap containing non-sensitive environment-specific values.
+        - name: ${HELM_OVERRIDE_VOLUME_NAME}
+          mountPath: ${HELM_OVERRIDE_MOUNT_PATH}
+          readOnly: true
+        # Mounts the sole short-lived Kubernetes API credential and only in the Helm container.
+        - name: deploy-api
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          readOnly: true
+
+  volumes:
+    # Holds writable Node HOME and npm cache data until this Agent Pod is deleted.
+    - name: node-home
+      emptyDir: {}
+    # Holds writable Helm state until this Agent Pod is deleted.
+    - name: helm-home
+      emptyDir: {}
+    # Supplies optional non-sensitive deployment differences without modifying the Chart's defaults.
+    - name: ${HELM_OVERRIDE_VOLUME_NAME}
+      configMap:
+        name: ${HELM_OVERRIDE_CONFIG_MAP}
+        optional: true
+    # Supplies GHCR push credentials only to BuildKit; the Secret data is never stored in this repository.
+    - name: buildkit-config
+      secret:
+        secretName: ${BUILDKIT_REGISTRY_SECRET_NAME}
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+    # Holds Rootless BuildKit state until this Agent Pod is deleted.
+    - name: buildkit-state
+      emptyDir: {}
+    # Projects a one-hour deploy token and cluster CA only into the Helm container.
+    - name: deploy-api
+      projected:
+        defaultMode: 420
+        sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3600
+          - configMap:
+              name: kube-root-ca.crt
+              items:
+                - key: ca.crt
+                  path: ca.crt
+          - downwardAPI:
+              items:
+                - path: namespace
+                  fieldRef:
+                    fieldPath: metadata.namespace

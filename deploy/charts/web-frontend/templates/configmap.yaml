@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # Names the runtime configuration uniquely for this Helm release.
+  name: {{ include "web-frontend.fullname" . }}-runtime
+  labels:
+    {{- include "web-frontend.labels" . | nindent 4 }}
+data:
+  # Supplies browser-visible configuration before the application JavaScript bundle executes.
+  config.js: |
+    window.__APP_CONFIG__ = {
+      API_BASE_URL: {{ .Values.runtimeConfig.apiBaseUrl | quote }}
+    };
