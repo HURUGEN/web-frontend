@@ -1,0 +1,14 @@
+# Excludes local dependency trees because CI restores packages deterministically with npm ci.
+node_modules/
+
+# Excludes generated Vite artifacts because the CI image build creates dist from committed source.
+dist/
+
+# Excludes environment files because browser runtime configuration is supplied by a Kubernetes ConfigMap.
+.env
+.env.*
+!.env.example
+
+# Excludes local validation evidence and operating-system metadata from the application repository.
+evidence/
+.DS_Store
