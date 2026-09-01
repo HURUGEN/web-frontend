@@ -25,11 +25,11 @@ test("readApiBaseUrl returns an empty string when runtime configuration is absen
 // Verifies that the browser API check uses the expected health route and drops query-string configuration noise.
 test("createApiHealthUrl appends the actuator health route to a public API base URL", () => {
   // Supplies a public API address with an optional path and query string from a browser-like runtime configuration.
-  const apiBaseUrl = "https://api.cloud.k8s.lab/backend/?ignored=true";
+  const apiBaseUrl = "https://api.cloud.k8s.lab:30443/backend/?ignored=true";
 
   assert.equal(
     createApiHealthUrl(apiBaseUrl),
-    "https://api.cloud.k8s.lab/backend/actuator/health"
+    "https://api.cloud.k8s.lab:30443/backend/actuator/health"
   );
 });
 
