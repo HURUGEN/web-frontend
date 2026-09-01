@@ -62,3 +62,13 @@ dd {
   overflow-wrap: anywhere;
   font-family: "SFMono-Regular", Consolas, monospace;
 }
+
+/* Gives a successful browser-to-API health check a restrained, distinct state color. */
+#api-health-status[data-state="healthy"] {
+  color: #166534;
+}
+
+/* Makes unavailable API, CORS, TLS, and timeout failures immediately identifiable during release verification. */
+#api-health-status[data-state="unhealthy"] {
+  color: #b91c1c;
+}
