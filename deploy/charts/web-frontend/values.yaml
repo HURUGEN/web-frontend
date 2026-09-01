@@ -31,7 +31,7 @@ ingress:
 
 runtimeConfig:
   # Supplies only a browser-visible API base URL; never add Token, password, or private service configuration.
-  apiBaseUrl: https://api.cloud.k8s.lab
+  apiBaseUrl: https://api.cloud.k8s.lab:30443
 
 resources:
   requests:
