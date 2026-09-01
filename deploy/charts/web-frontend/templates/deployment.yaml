@@ -15,6 +15,9 @@ spec:
     metadata:
       labels:
         {{- include "web-frontend.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Changes the Pod template when the subPath-mounted runtime ConfigMap changes, forcing refreshed configuration in every Pod.
+        checksum/runtime-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       # References only the existing private-registry pull Secret by name.
       imagePullSecrets:
