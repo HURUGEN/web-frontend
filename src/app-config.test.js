@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readApiBaseUrl } from "./app-config.js";
+import { createApiHealthUrl, readApiBaseUrl } from "./app-config.js";
 
 // Verifies that a public runtime address is normalized before the application renders it.
 test("readApiBaseUrl removes surrounding whitespace and trailing slashes", () => {
@@ -20,4 +20,23 @@ test("readApiBaseUrl returns an empty string when runtime configuration is absen
   const testGlobalObject = {};
 
   assert.equal(readApiBaseUrl(testGlobalObject), "");
+});
+
+// Verifies that the browser API check uses the expected health route and drops query-string configuration noise.
+test("createApiHealthUrl appends the actuator health route to a public API base URL", () => {
+  // Supplies a public API address with an optional path and query string from a browser-like runtime configuration.
+  const apiBaseUrl = "https://api.cloud.k8s.lab/backend/?ignored=true";
+
+  assert.equal(
+    createApiHealthUrl(apiBaseUrl),
+    "https://api.cloud.k8s.lab/backend/actuator/health"
+  );
+});
+
+// Verifies that an address carrying embedded credentials cannot become a browser request target.
+test("createApiHealthUrl rejects runtime API URLs with embedded credentials", () => {
+  // Supplies an intentionally unsafe URL fixture that must not be requested by the browser.
+  const unsafeApiBaseUrl = "https://operator:secret@api.cloud.k8s.lab";
+
+  assert.equal(createApiHealthUrl(unsafeApiBaseUrl), "");
 });
